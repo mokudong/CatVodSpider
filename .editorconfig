@@ -1,0 +1,48 @@
+# EditorConfig is awesome: https://EditorConfig.org
+
+# 顶级配置文件
+root = true
+
+# 所有文件的默认设置
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Java 源文件
+[*.java]
+indent_style = space
+indent_size = 4
+max_line_length = 120
+continuation_indent_size = 8
+
+# Gradle 文件
+[*.gradle]
+indent_style = space
+indent_size = 4
+
+# XML 文件（包括 AndroidManifest.xml）
+[*.xml]
+indent_style = space
+indent_size = 4
+
+# Markdown 文件
+[*.md]
+max_line_length = off
+trim_trailing_whitespace = false
+
+# JSON 文件
+[*.json]
+indent_style = space
+indent_size = 2
+
+# Properties 文件
+[*.properties]
+indent_style = space
+indent_size = 4
+
+# ProGuard 规则
+[*.pro]
+indent_style = space
+indent_size = 4
