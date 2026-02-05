@@ -11,6 +11,7 @@ import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Image;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 import com.hierynomus.msfscc.FileAttributes;
 import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation;
 import com.hierynomus.protocol.commons.EnumWithValue;
@@ -33,7 +34,16 @@ public class Samba extends Spider {
     }
 
     private Drive getDrive(String name) {
-        return drives.get(drives.indexOf(new Drive(name)));
+        if (drives == null || drives.isEmpty()) {
+            throw new IllegalStateException("Samba drives not initialized, please call init() first");
+        }
+
+        int index = drives.indexOf(new Drive(name));
+        if (index == -1) {
+            throw new IllegalArgumentException("Samba drive not found: " + name);
+        }
+
+        return drives.get(index);
     }
 
     private boolean isFolder(FileIdBothDirectoryInformation item) {
@@ -53,6 +63,12 @@ public class Samba extends Spider {
     @Override
     public String homeContent(boolean filter) {
         List<Class> classes = new ArrayList<>();
+
+        if (drives == null || drives.isEmpty()) {
+            Logger.w("Samba drives not initialized or empty");
+            return Result.string(classes);
+        }
+
         for (Drive drive : drives) classes.add(drive.toType());
         return Result.string(classes);
     }
@@ -122,6 +138,14 @@ public class Samba extends Spider {
 
     @Override
     public void destroy() {
-        for (Drive drive : drives) drive.release();
+        if (drives != null) {
+            for (Drive drive : drives) {
+                try {
+                    drive.release();
+                } catch (Exception e) {
+                    Logger.e("Failed to release Samba drive: " + drive.getServer(), e);
+                }
+            }
+        }
     }
 }
