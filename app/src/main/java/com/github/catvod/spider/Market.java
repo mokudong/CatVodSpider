@@ -31,22 +31,94 @@ public class Market extends Spider {
     private static final String TAG = Market.class.getSimpleName();
     private List<Data> datas;
 
+    /**
+     * 初始化 Market
+     * <p>
+     * 添加空指针防护。
+     * </p>
+     *
+     * @param context Android Context
+     * @param extend  扩展参数
+     * @throws Exception 初始化失败异常
+     */
     @Override
-    public void init(Context context, String extend) {
-        if (extend.startsWith("http")) extend = OkHttp.string(extend);
+    public void init(Context context, String extend) throws Exception {
+        if (extend == null) {
+            Logger.w("Market init called with null extend");
+            datas = new ArrayList<>();
+            return;
+        }
+
+        if (extend.startsWith("http")) {
+            String remoteConfig = OkHttp.string(extend);
+            extend = (remoteConfig != null) ? remoteConfig : extend;
+        }
+
         datas = Data.arrayFrom(extend);
+        if (datas == null) {
+            Logger.w("Failed to parse Market data");
+            datas = new ArrayList<>();
+        }
     }
 
+    /**
+     * 获取首页内容
+     * <p>
+     * 添加空指针防护和边界检查。
+     * </p>
+     *
+     * @param filter 是否需要筛选
+     * @return 分类列表 JSON
+     * @throws Exception 获取失败异常
+     */
     @Override
-    public String homeContent(boolean filter) {
+    public String homeContent(boolean filter) throws Exception {
         List<Class> classes = new ArrayList<>();
-        if (datas.size() > 1) for (int i = 1; i < datas.size(); i++) classes.add(datas.get(i).type());
+
+        // 空指针防护
+        if (datas == null || datas.isEmpty()) {
+            Logger.w("Market data is null or empty");
+            return Result.string(classes, new ArrayList<>());
+        }
+
+        // 添加分类（跳过第一个，它是推荐内容）
+        if (datas.size() > 1) {
+            for (int i = 1; i < datas.size(); i++) {
+                classes.add(datas.get(i).type());
+            }
+        }
+
+        // 返回推荐内容
         return Result.string(classes, datas.get(0).getVod());
     }
 
+    /**
+     * 获取分类内容
+     * <p>
+     * 添加空指针防护。
+     * </p>
+     *
+     * @param tid    分类 ID
+     * @param pg     页码
+     * @param filter 是否筛选
+     * @param extend 扩展参数
+     * @return 视频列表 JSON
+     * @throws Exception 获取失败异常
+     */
     @Override
-    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) {
-        for (Data data : datas) if (data.getName().equals(tid)) return Result.get().page().vod(data.getVod()).string();
+    public String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) throws Exception {
+        // 空指针防护
+        if (datas == null) {
+            Logger.w("Market data is null");
+            return "";
+        }
+
+        for (Data data : datas) {
+            if (data.getName().equals(tid)) {
+                return Result.get().page().vod(data.getVod()).string();
+            }
+        }
+
         return "";
     }
 
