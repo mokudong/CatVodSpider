@@ -54,7 +54,27 @@ public class AList extends Spider {
     }
 
     private Drive getDrive(String name) {
-        return drives.get(drives.indexOf(new Drive(name))).check();
+        if (drives == null || drives.isEmpty()) {
+            throw new IllegalStateException("Drives not initialized. Call init() first or check ext configuration.");
+        }
+
+        int index = drives.indexOf(new Drive(name));
+        if (index == -1) {
+            throw new IllegalArgumentException("Drive not found: " + name + ". Available drives: " + getDriveNames());
+        }
+
+        return drives.get(index).check();
+    }
+
+    private String getDriveNames() {
+        if (drives == null || drives.isEmpty()) return "[]";
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < drives.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(drives.get(i).getName());
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     private String post(Drive drive, String url, String param) {

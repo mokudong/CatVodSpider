@@ -132,10 +132,29 @@ public class Local extends Spider {
 
     private byte[] getBase64(String path) {
         Bitmap bitmap = ThumbnailUtils.createVideoThumbnail(path, MediaStore.Images.Thumbnails.MINI_KIND);
-        if (bitmap == null) return Base64.decode(Image.VIDEO.split("base64,")[1], Base64.DEFAULT);
-        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos);
-        return baos.toByteArray();
+        if (bitmap == null) {
+            // 安全地解析默认图片（防止 ArrayIndexOutOfBoundsException）
+            String[] parts = Image.VIDEO.split("base64,");
+            if (parts.length < 2) {
+                com.orhanobut.logger.Logger.e("Invalid base64 image format: " + Image.VIDEO);
+                return new byte[0];
+            }
+            return Base64.decode(parts[1], Base64.DEFAULT);
+        }
+
+        // 使用 try-with-resources 确保资源释放
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            com.orhanobut.logger.Logger.e("Failed to compress bitmap for path: " + path, e);
+            return new byte[0];
+        } finally {
+            // 释放 Bitmap 内存
+            if (bitmap != null && !bitmap.isRecycled()) {
+                bitmap.recycle();
+            }
+        }
     }
 
     private List<Sub> getSubs(String path) {
