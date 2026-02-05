@@ -34,16 +34,18 @@ public interface ISpider {
      *
      * @param context Android Context
      * @param extend  扩展参数（来自配置文件）
+     * @throws Exception 初始化异常
      */
-    void init(Context context, String extend);
+    void init(Context context, String extend) throws Exception;
 
     /**
      * 获取首页内容（分类列表）
      *
      * @param filter 是否需要筛选条件
      * @return JSON 字符串
+     * @throws Exception 获取失败异常
      */
-    String homeContent(boolean filter);
+    String homeContent(boolean filter) throws Exception;
 
     /**
      * 获取分类内容（视频列表）
@@ -53,16 +55,18 @@ public interface ISpider {
      * @param filter 是否启用筛选
      * @param extend 筛选参数
      * @return JSON 字符串
+     * @throws Exception 获取失败异常
      */
-    String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend);
+    String categoryContent(String tid, String pg, boolean filter, HashMap<String, String> extend) throws Exception;
 
     /**
      * 获取视频详情
      *
      * @param ids 视频ID列表
      * @return JSON 字符串
+     * @throws Exception 获取失败异常
      */
-    String detailContent(List<String> ids);
+    String detailContent(List<String> ids) throws Exception;
 
     /**
      * 搜索视频
@@ -70,8 +74,9 @@ public interface ISpider {
      * @param keyword 搜索关键词
      * @param quick   是否快速搜索
      * @return JSON 字符串
+     * @throws Exception 搜索失败异常
      */
-    String searchContent(String keyword, boolean quick);
+    String searchContent(String keyword, boolean quick) throws Exception;
 
     /**
      * 获取播放地址
@@ -80,8 +85,9 @@ public interface ISpider {
      * @param id       播放ID
      * @param vipFlags VIP线路标识列表
      * @return JSON 字符串
+     * @throws Exception 获取失败异常
      */
-    String playerContent(String flag, String id, List<String> vipFlags);
+    String playerContent(String flag, String id, List<String> vipFlags) throws Exception;
 
     /**
      * 销毁爬虫（释放资源）
@@ -96,21 +102,23 @@ public interface ISpider {
      *
      * @param params 请求参数
      * @return 响应数组：[状态码, Content-Type, 数据]
+     * @throws Exception 代理请求失败异常
      */
-    default Object[] proxy(Map<String, String> params) {
+    default Object[] proxy(Map<String, String> params) throws Exception {
         return null;
     }
 
     /**
-     * 获取手动搜索视频（可选实现）
+     * 是否手动视频检测（可选实现）
      * <p>
-     * 与 searchContent 的区别：manualVideoCheck 用于手动验证搜索结果。
+     * 返回 true 表示需要手动检测视频格式。
      * </p>
      *
-     * @return JSON 字符串
+     * @return true=需要手动检测，false=自动检测
+     * @throws Exception 检测失败异常
      */
-    default String manualVideoCheck() {
-        return "";
+    default boolean manualVideoCheck() throws Exception {
+        return false;
     }
 
     /**
@@ -120,8 +128,9 @@ public interface ISpider {
      * </p>
      *
      * @return JSON 字符串
+     * @throws Exception 获取失败异常
      */
-    default String homeVideoContent() {
+    default String homeVideoContent() throws Exception {
         return "";
     }
 }

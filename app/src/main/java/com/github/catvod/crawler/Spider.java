@@ -2,6 +2,8 @@ package com.github.catvod.crawler;
 
 import android.content.Context;
 
+import com.github.catvod.api.contract.ISpider;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +16,10 @@ import okhttp3.OkHttpClient;
  * <p>
  * 所有 CatVodSpider 爬虫必须继承此类，并实现相应的接口方法。
  * TVBox 通过反射调用这些方法来获取视频数据。
+ * </p>
+ * <p>
+ * 本类实现了 {@link ISpider} 接口，遵循依赖倒置原则（DIP），
+ * 使得爬虫可以通过接口进行依赖注入和单元测试。
  * </p>
  *
  * <h3>核心方法说明：</h3>
@@ -47,8 +53,9 @@ import okhttp3.OkHttpClient;
  *
  * @author CatVod
  * @version 1.0
+ * @see ISpider
  */
-public abstract class Spider {
+public abstract class Spider implements ISpider {
 
     /**
      * 源标识
