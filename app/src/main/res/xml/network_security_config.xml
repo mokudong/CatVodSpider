@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Network Security Configuration
+
+  此配置文件定义了应用的网络安全策略：
+  1. 默认禁止明文 HTTP 流量（仅允许 HTTPS）
+  2. 调试版本允许用户安装的 CA 证书（用于抓包调试）
+  3. 仅在必要时允许特定域名的明文流量（如本地调试）
+
+  参考文档：https://developer.android.com/training/articles/security-config
+-->
+<network-security-config>
+    <!-- 默认配置：仅允许 HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- 信任系统预装的 CA 证书 -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- 调试配置：允许用户安装的 CA 证书（用于 Charles/Fiddler 抓包） -->
+    <debug-overrides>
+        <trust-anchors>
+            <!-- 调试版本额外信任用户安装的证书 -->
+            <certificates src="user" />
+            <certificates src="system" />
+        </trust-anchors>
+    </debug-overrides>
+
+    <!--
+      如果某些特定域名必须使用 HTTP（不推荐），可在此配置
+      示例：允许本地测试服务器使用明文流量
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <!--
+          ⚠️ 警告：不要在此添加生产环境域名！
+          所有生产环境域名必须使用 HTTPS
+        -->
+    </domain-config>
+
+    <!--
+      证书固定（Certificate Pinning）示例（可选）
+      用于防止中间人攻击和 CA 证书被攻破的情况
+
+      <domain-config>
+        <domain includeSubdomains="true">api.yourdomain.com</domain>
+        <pin-set expiration="2027-01-01">
+          <pin digest="SHA-256">HASH_OF_YOUR_CERTIFICATE</pin>
+          <pin digest="SHA-256">BACKUP_CERTIFICATE_HASH</pin>
+        </pin-set>
+      </domain-config>
+
+      生成证书哈希的命令：
+      openssl s_client -connect api.yourdomain.com:443 \
+        | openssl x509 -pubkey -noout \
+        | openssl rsa -pubin -outform der \
+        | openssl dgst -sha256 -binary \
+        | openssl enc -base64
+    -->
+</network-security-config>
