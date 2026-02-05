@@ -29,7 +29,7 @@ import java.util.Map;
  */
 public class Kanqiu extends Spider {
 
-    private static String siteUrl = "http://www.88kanqiu.tw";
+    private String siteUrl = "http://www.88kanqiu.tw";
 
     private Map<String, String> getHeader() {
         Map<String, String> header = new HashMap<>();
