@@ -13,6 +13,7 @@ import com.github.catvod.utils.FileUtil;
 import com.github.catvod.utils.Notify;
 import com.github.catvod.utils.Path;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -49,22 +50,62 @@ public class Market extends Spider {
         return "";
     }
 
+    /**
+     * 执行下载操作
+     * <p>
+     * 使用 try-with-resources 确保 Response 资源正确释放。
+     * 改进异常处理，记录具体错误信息。
+     * </p>
+     *
+     * @param action 下载 URL
+     * @return 结果通知
+     */
     @Override
-    public String action(String action) {
-        try {
-            OkHttp.cancel(TAG);
-            String name = Uri.parse(action).getLastPathSegment();
-            Notify.show("正在下載..." + name);
-            Response response = OkHttp.newCall(action, TAG);
+    public String action(String action) throws Exception {
+        OkHttp.cancel(TAG);
+
+        String name = Uri.parse(action).getLastPathSegment();
+        if (name == null || name.isEmpty()) {
+            Logger.w("Failed to extract filename from URL: " + action);
+            return Result.notify("無效的下載地址");
+        }
+
+        Notify.show("正在下載..." + name);
+
+        // 使用 try-with-resources 自动关闭 Response
+        try (Response response = OkHttp.newCall(action, TAG)) {
+            // 检查 response.body() 是否为 null
+            if (response.body() == null) {
+                Logger.e("Empty response body from: " + action);
+                return Result.notify("下載失敗：空響應");
+            }
+
+            // 创建下载文件
             File file = Path.create(new File(Path.download(), name));
+
+            // 下载文件
             download(file, response.body().byteStream());
-            if (file.getName().endsWith(".zip")) FileUtil.unzip(file, Path.download());
-            if (file.getName().endsWith(".apk")) FileUtil.openFile(file);
+
+            // 处理下载后的文件
+            if (file.getName().endsWith(".zip")) {
+                FileUtil.unzip(file, Path.download());
+            }
+            if (file.getName().endsWith(".apk")) {
+                FileUtil.openFile(file);
+            }
+
+            // 检查并复制相关信息
             checkCopy(action);
-            response.close();
+
+            Logger.i("Download completed: " + name);
             return Result.notify("下載完成");
-        } catch (Exception e) {
-            return Result.notify(e.getMessage());
+
+        } catch (IOException e) {
+            Logger.e("Network error during download: " + action, e);
+            return Result.notify("下載失敗：網絡錯誤");
+        } catch (IllegalArgumentException e) {
+            Logger.e("Invalid URL: " + action, e);
+            return Result.notify("下載失敗：無效地址");
         }
     }
 
