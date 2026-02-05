@@ -11,6 +11,7 @@ import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Json;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -61,9 +62,24 @@ public class PTT extends Spider {
         Document doc = Jsoup.parse(OkHttp.string(builder.toString(), getHeader()));
         List<Vod> list = new ArrayList<>();
         for (Element div : doc.select("div.card > div.embed-responsive")) {
-            Element a = div.select("a").get(0);
-            Element img = a.select("img").get(0);
-            String remark = div.select("span.badge.badge-success").get(0).text();
+            // 安全获取元素，避免 ArrayIndexOutOfBoundsException
+            Elements aElements = div.select("a");
+            if (aElements.isEmpty()) {
+                Logger.w("PTT: Missing <a> element in card");
+                continue;
+            }
+
+            Element a = aElements.get(0);
+            Elements imgElements = a.select("img");
+            if (imgElements.isEmpty()) {
+                Logger.w("PTT: Missing <img> element in card");
+                continue;
+            }
+
+            Element img = imgElements.get(0);
+            Elements badgeElements = div.select("span.badge.badge-success");
+            String remark = badgeElements.isEmpty() ? "" : badgeElements.get(0).text();
+
             String vodPic = img.attr("src").startsWith("http") ? img.attr("src") : url + img.attr("src");
             String name = img.attr("alt");
             if (!TextUtils.isEmpty(name)) list.add(new Vod(a.attr("href").substring(3), name, vodPic, remark));
@@ -109,9 +125,24 @@ public class PTT extends Spider {
         Document doc = Jsoup.parse(OkHttp.string(url + String.format("q/%s?page=%s", key, pg), getHeader()));
         List<Vod> list = new ArrayList<>();
         for (Element div : doc.select("div.card > div.embed-responsive")) {
-            Element a = div.select("a").get(0);
-            Element img = a.select("img").get(0);
-            String remark = div.select("span.badge.badge-success").get(0).text();
+            // 安全获取元素，避免 ArrayIndexOutOfBoundsException
+            Elements aElements = div.select("a");
+            if (aElements.isEmpty()) {
+                Logger.w("PTT: Missing <a> element in search result");
+                continue;
+            }
+
+            Element a = aElements.get(0);
+            Elements imgElements = a.select("img");
+            if (imgElements.isEmpty()) {
+                Logger.w("PTT: Missing <img> element in search result");
+                continue;
+            }
+
+            Element img = imgElements.get(0);
+            Elements badgeElements = div.select("span.badge.badge-success");
+            String remark = badgeElements.isEmpty() ? "" : badgeElements.get(0).text();
+
             String vodPic = img.attr("src").startsWith("http") ? img.attr("src") : url + img.attr("src");
             String name = img.attr("alt");
             if (!TextUtils.isEmpty(name)) list.add(new Vod(a.attr("href").substring(3), name, vodPic, remark));
