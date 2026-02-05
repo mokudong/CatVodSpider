@@ -21,9 +21,11 @@ import javax.net.ssl.X509TrustManager;
 import okhttp3.Call;
 import okhttp3.Dns;
 import okhttp3.Headers;
+import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * HTTP 请求工具类
@@ -98,6 +100,15 @@ public class OkHttp {
      * GET 请求方法常量
      */
     public static final String GET = "GET";
+
+    /**
+     * 最大响应体大小（50MB）
+     * <p>
+     * 防止下载超大文件导致内存溢出（OOM）。
+     * 视频流等大文件应该使用流式处理而非一次性加载到内存。
+     * </p>
+     */
+    private static final long MAX_RESPONSE_SIZE = 50 * 1024 * 1024; // 50MB
 
     /**
      * OkHttpClient 实例（可选，用于自定义配置）
@@ -386,7 +397,8 @@ public class OkHttp {
                 .dns(safeDns())
                 .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
-                .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS);
+                .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+                .addInterceptor(responseSizeInterceptor());
 
         // 仅在调试模式下禁用 SSL 证书验证
         if (BuildConfig.DISABLE_SSL_VERIFICATION) {
@@ -467,6 +479,57 @@ public class OkHttp {
         } catch (Throwable e) {
             return null;
         }
+    }
+
+    /**
+     * 创建响应大小限制拦截器
+     * <p>
+     * 检查响应的 Content-Length 头，如果超过限制则拒绝接收。
+     * 防止下载超大文件导致 OOM（内存溢出）。
+     * </p>
+     *
+     * @return 拦截器实例
+     */
+    private static Interceptor responseSizeInterceptor() {
+        return new Interceptor() {
+            @Override
+            public Response intercept(Chain chain) throws IOException {
+                Request request = chain.request();
+                Response response = chain.proceed(request);
+
+                // 获取 Content-Length（响应体大小）
+                ResponseBody body = response.body();
+                if (body != null) {
+                    long contentLength = body.contentLength();
+
+                    // 检查是否超过限制（-1 表示未知大小，允许通过）
+                    if (contentLength > MAX_RESPONSE_SIZE) {
+                        // 关闭响应体
+                        body.close();
+
+                        // 记录警告日志
+                        Logger.w(String.format(
+                                "Response size (%d bytes) exceeds limit (%d bytes) for URL: %s",
+                                contentLength, MAX_RESPONSE_SIZE, request.url()
+                        ));
+
+                        // 抛出异常
+                        throw new IOException(String.format(
+                                "Response too large: %d bytes (max %d bytes). URL: %s",
+                                contentLength, MAX_RESPONSE_SIZE, request.url()
+                        ));
+                    }
+
+                    // 未知大小的响应打印警告（可能导致 OOM）
+                    if (contentLength == -1) {
+                        Logger.w("Response size unknown (no Content-Length header) for URL: " + request.url());
+                        Logger.w("Risk of OOM if response is too large. Consider using streaming.");
+                    }
+                }
+
+                return response;
+            }
+        };
     }
 
     /**
