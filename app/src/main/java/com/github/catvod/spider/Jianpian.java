@@ -1,6 +1,7 @@
 package com.github.catvod.spider;
 
 import android.content.Context;
+import android.text.TextUtils;
 
 import com.github.catvod.bean.Class;
 import com.github.catvod.bean.Result;
@@ -11,11 +12,14 @@ import com.github.catvod.bean.jianpian.Resp;
 import com.github.catvod.bean.jianpian.Search;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
+import com.github.catvod.utils.Json;
+import com.github.catvod.utils.JsonValidator;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.orhanobut.logger.Logger;
 
 import java.net.URLEncoder;
 import java.util.ArrayList;
@@ -41,34 +45,139 @@ public class Jianpian extends Spider {
         return headers;
     }
 
+    /**
+     * 初始化 Jianpian 爬虫
+     * <p>
+     * 通过 DNS 解析获取实际域名，并获取图片域名配置。
+     * 使用 JsonValidator 验证所有网络响应。
+     * </p>
+     *
+     * @param context Android Context
+     * @param extend  扩展参数
+     * @throws Exception 初始化失败异常
+     */
     @Override
-    public void init(Context context, String extend) {
+    public void init(Context context, String extend) throws Exception {
         this.extend = extend;
-        JsonObject domains = new Gson().fromJson(OkHttp.string("https://dns.alidns.com/resolve?name=swrdsfeiujo25sw.cc&type=TXT"), JsonObject.class);
-        String parts = domains.getAsJsonArray("Answer").get(0).getAsJsonObject().get("data").getAsString();
-        parts = parts.replace("\"", "");
-        String[] domain = parts.split(",");
-        for (String d : domain) {
-            siteUrl = "https://wangerniu." + d;
-            String json = OkHttp.string(siteUrl + "/api/v2/settings/resourceDomainConfig");
-            if (!json.isEmpty()) {
-                JsonObject root = new Gson().fromJson(json, JsonObject.class);
-                imgDomain = root.getAsJsonObject("data").get("imgDomain").getAsString().split(",")[0];
-                break;
+
+        try {
+            // 获取 DNS 解析结果
+            String dnsResponse = OkHttp.string("https://dns.alidns.com/resolve?name=swrdsfeiujo25sw.cc&type=TXT");
+            if (TextUtils.isEmpty(dnsResponse)) {
+                Logger.w("DNS resolution returned empty response");
+                return;
             }
+
+            // 使用 JsonValidator 验证 DNS 响应
+            JsonObject domains = JsonValidator.validateResponse(dnsResponse, "object");
+            JsonArray answerArray = Json.safeGetJsonArray(domains, "Answer");
+
+            if (answerArray.size() == 0) {
+                Logger.w("DNS Answer array is empty");
+                return;
+            }
+
+            // 安全获取 data 字段
+            JsonObject firstAnswer = answerArray.get(0).getAsJsonObject();
+            String parts = Json.safeGetString(firstAnswer, "data", "");
+            if (TextUtils.isEmpty(parts)) {
+                Logger.w("DNS data field is empty");
+                return;
+            }
+
+            parts = parts.replace("\"", "");
+            String[] domain = parts.split(",");
+
+            // 遍历域名，找到可用的
+            for (String d : domain) {
+                siteUrl = "https://wangerniu." + d;
+                Logger.d("Trying domain: " + siteUrl);
+
+                String json = OkHttp.string(siteUrl + "/api/v2/settings/resourceDomainConfig");
+                if (TextUtils.isEmpty(json)) {
+                    Logger.d("Domain returned empty response, trying next");
+                    continue;
+                }
+
+                try {
+                    // 使用 JsonValidator 验证响应
+                    JsonObject root = JsonValidator.validateResponse(json, "object");
+                    JsonObject data = Json.safeGetJsonObject(root, "data");
+
+                    String imgDomainStr = Json.safeGetString(data, "imgDomain", "");
+                    if (!TextUtils.isEmpty(imgDomainStr)) {
+                        String[] imgDomains = imgDomainStr.split(",");
+                        if (imgDomains.length > 0) {
+                            imgDomain = imgDomains[0];
+                            Logger.i("Jianpian initialized successfully with domain: " + siteUrl);
+                            Logger.i("Image domain: " + imgDomain);
+                            break;
+                        }
+                    }
+                } catch (JsonValidator.ValidationException e) {
+                    Logger.w("Failed to parse response from domain: " + siteUrl, e);
+                    // 继续尝试下一个域名
+                }
+            }
+
+            if (TextUtils.isEmpty(imgDomain)) {
+                Logger.w("Failed to initialize Jianpian: no valid domain found");
+            }
+
+        } catch (JsonValidator.ValidationException e) {
+            Logger.e("Failed to parse DNS resolution response", e);
+            throw new Exception("Jianpian initialization failed: invalid DNS response", e);
         }
     }
 
+    /**
+     * 获取首页内容
+     * <p>
+     * 使用 JsonValidator 验证响应，安全提取分类数据。
+     * </p>
+     *
+     * @param filter 是否需要筛选
+     * @return 分类列表 JSON
+     * @throws Exception 获取失败异常
+     */
     @Override
-    public String homeContent(boolean filter) {
+    public String homeContent(boolean filter) throws Exception {
         List<Class> classes = new ArrayList<>();
-        JsonObject homeCategory = new Gson().fromJson(OkHttp.string(siteUrl + "/api/v2/settings/homeCategory"), JsonObject.class);
-        JsonArray dataArray = homeCategory.getAsJsonArray("data");
-        for (JsonElement element : dataArray) {
-            if (element.getAsJsonObject().get("name").getAsString().equals("推荐")) continue;
-            classes.add(new Class(element.getAsJsonObject().get("id").getAsString(), element.getAsJsonObject().get("name").getAsString()));
+
+        try {
+            String response = OkHttp.string(siteUrl + "/api/v2/settings/homeCategory");
+            if (TextUtils.isEmpty(response)) {
+                Logger.w("Home category response is empty");
+                return Result.string(classes, new JsonObject());
+            }
+
+            // 使用 JsonValidator 验证响应
+            JsonObject homeCategory = JsonValidator.validateResponse(response, "object");
+            JsonArray dataArray = Json.safeGetJsonArray(homeCategory, "data");
+
+            for (JsonElement element : dataArray) {
+                if (!element.isJsonObject()) continue;
+
+                JsonObject item = element.getAsJsonObject();
+                String name = Json.safeGetString(item, "name", "");
+                String id = Json.safeGetString(item, "id", "");
+
+                if (name.equals("推荐")) continue;
+                if (TextUtils.isEmpty(name) || TextUtils.isEmpty(id)) continue;
+
+                classes.add(new Class(id, name));
+            }
+
+            // 解析扩展配置
+            JsonElement filterObj = TextUtils.isEmpty(extend) ?
+                    new JsonObject() : JsonParser.parseString(extend);
+
+            return Result.string(classes, filterObj);
+
+        } catch (JsonValidator.ValidationException e) {
+            Logger.e("Failed to parse home content response", e);
+            return Result.string(classes, new JsonObject());
         }
-        return Result.string(classes, JsonParser.parseString(OkHttp.string(extend)));
     }
 
     @Override
