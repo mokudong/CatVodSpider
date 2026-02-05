@@ -2,7 +2,9 @@ package com.github.catvod.net;
 
 import android.annotation.SuppressLint;
 
+import com.github.catvod.BuildConfig;
 import com.github.catvod.crawler.Spider;
+import com.orhanobut.logger.Logger;
 
 import java.io.IOException;
 import java.security.SecureRandom;
@@ -356,20 +358,34 @@ public class OkHttp {
      *   <li>连接超时：15秒</li>
      *   <li>读取超时：15秒</li>
      *   <li>写入超时：15秒</li>
-     *   <li>信任所有 SSL 证书</li>
+     *   <li>SSL 证书验证（生产环境启用，调试环境可禁用）</li>
      * </ul>
      * </p>
      *
      * @return OkHttpClient.Builder
      */
     private static OkHttpClient.Builder getBuilder() {
-        return new OkHttpClient.Builder()
+        OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .dns(safeDns())
                 .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
-                .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
-                .hostnameVerifier((hostname, session) -> true)
-                .sslSocketFactory(getSSLContext().getSocketFactory(), trustAllCertificates());
+                .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS);
+
+        // 仅在调试模式下禁用 SSL 证书验证
+        if (BuildConfig.DISABLE_SSL_VERIFICATION) {
+            Logger.w("⚠️ SSL certificate verification is DISABLED (DEBUG BUILD ONLY)");
+            Logger.w("⚠️ This is INSECURE and should NEVER be used in production!");
+            builder.hostnameVerifier((hostname, session) -> true);
+            SSLContext sslContext = getSSLContext();
+            if (sslContext != null) {
+                builder.sslSocketFactory(sslContext.getSocketFactory(), trustAllCertificates());
+            }
+        } else {
+            // 生产环境：使用系统默认的 SSL 验证
+            Logger.i("✓ SSL certificate verification is ENABLED (secure mode)");
+        }
+
+        return builder;
     }
 
     /**
@@ -439,20 +455,35 @@ public class OkHttp {
     /**
      * 创建信任所有证书的 TrustManager
      * <p>
-     * <b>警告：</b>这在生产环境中是不安全的，仅用于开发测试。
+     * <b>⚠️ 安全警告：</b>
+     * 此方法创建的 TrustManager 会接受任何 SSL/TLS 证书，包括自签名证书、过期证书和伪造证书。
+     * 这使得应用完全暴露于中间人攻击 (MITM)。
+     * </p>
+     * <p>
+     * <b>仅在以下情况使用：</b>
+     * <ul>
+     *   <li>开发环境调试（BuildConfig.DISABLE_SSL_VERIFICATION = true）</li>
+     *   <li>本地测试自签名证书</li>
+     * </ul>
+     * </p>
+     * <p>
+     * <b>⚠️ 禁止在生产环境使用！</b>
+     * 生产环境必须启用完整的证书验证以保护用户数据安全。
      * </p>
      *
-     * @return X509TrustManager 实例
+     * @return X509TrustManager 实例（不进行任何验证）
      */
     @SuppressLint({"TrustAllX509TrustManager", "CustomX509TrustManager"})
     private static X509TrustManager trustAllCertificates() {
         return new X509TrustManager() {
             @Override
             public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                // 空实现 = 不验证客户端证书（不安全）
             }
 
             @Override
             public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                // 空实现 = 不验证服务器证书（不安全）
             }
 
             @Override

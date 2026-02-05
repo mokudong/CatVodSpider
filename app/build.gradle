@@ -20,10 +20,15 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
     }
 
     buildTypes {
+        debug {
+            buildConfigField "boolean", "DISABLE_SSL_VERIFICATION", "true"
+        }
         release {
+            buildConfigField "boolean", "DISABLE_SSL_VERIFICATION", "false"
             minifyEnabled true
             proguardFiles 'proguard-rules.pro'
             proguardDictionaries {
@@ -55,4 +60,7 @@ dependencies {
     implementation 'com.hierynomus:smbj:0.14.0'
     implementation 'com.orhanobut:logger:2.2.0'
     implementation 'org.jsoup:jsoup:1.22.1'
+
+    // AndroidX Security - 用于加密存储
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 }
