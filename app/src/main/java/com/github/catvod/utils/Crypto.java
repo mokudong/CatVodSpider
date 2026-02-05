@@ -2,12 +2,15 @@ package com.github.catvod.utils;
 
 import android.util.Base64;
 
+import com.orhanobut.logger.Logger;
+
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.spec.AlgorithmParameterSpec;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
@@ -31,6 +34,7 @@ public class Crypto {
             while (sb.length() < 32) sb.insert(0, "0");
             return sb.toString().toLowerCase();
         } catch (Exception e) {
+            Logger.e("MD5 calculation failed", e);
             return "";
         }
     }
@@ -44,7 +48,8 @@ public class Crypto {
             cipher.init(Cipher.DECRYPT_MODE, keySpec, paramSpec);
             byte[] decrypted = cipher.doFinal(Base64.decode(src, Base64.DEFAULT));
             return new String(decrypted);
-        } catch (Exception ignored) {
+        } catch (Exception e) {
+            Logger.e("AES CBC decryption failed", e);
             return "";
         }
     }
@@ -82,10 +87,23 @@ public class Crypto {
         return new String(decrypted, StandardCharsets.UTF_8);
     }
 
+    /**
+     * 生成随机密钥
+     * <p>
+     * 使用 SecureRandom 生成密码学安全的随机密钥。
+     * 注意：不要使用 Math.random()，它是可预测的！
+     * </p>
+     *
+     * @param size 密钥长度
+     * @return 随机密钥字符串
+     */
     public static String randomKey(int size) {
         StringBuilder key = new StringBuilder();
         String keys = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-        for (int i = 0; i < size; i++) key.append(keys.charAt((int) Math.floor(Math.random() * keys.length())));
+        SecureRandom secureRandom = new SecureRandom();
+        for (int i = 0; i < size; i++) {
+            key.append(keys.charAt(secureRandom.nextInt(keys.length())));
+        }
         return key.toString();
     }
 }
