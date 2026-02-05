@@ -79,4 +79,28 @@ dependencies {
 
     // AndroidX Security - 用于加密存储
     implementation 'androidx.security:security-crypto:1.1.0-alpha06'
+
+    // ============================================================
+    // 测试依赖
+    // ============================================================
+
+    // JUnit 4 - 单元测试框架
+    testImplementation 'junit:junit:4.13.2'
+
+    // Mockito - Mock 框架
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.mockito:mockito-inline:5.2.0'  // 支持 mock final 类和静态方法
+
+    // Truth - Google 的断言库（可选，比 JUnit Assert 更易读）
+    testImplementation 'com.google.truth:truth:1.1.5'
+
+    // MockWebServer - OkHttp 的 Mock 服务器（用于测试网络请求）
+    testImplementation 'com.squareup.okhttp3:mockwebserver:' + okhttpVersion
+
+    // Robolectric - Android 单元测试框架（无需真实设备）
+    testImplementation 'org.robolectric:robolectric:4.11.1'
+
+    // AndroidX Test - Android 测试基础库
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
