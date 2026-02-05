@@ -101,8 +101,9 @@ public class OkHttp {
 
     /**
      * OkHttpClient 实例（可选，用于自定义配置）
+     * 使用 volatile 确保多线程可见性
      */
-    private OkHttpClient client;
+    private volatile OkHttpClient client;
 
     /**
      * 单例加载器（延迟初始化）
@@ -340,13 +341,29 @@ public class OkHttp {
     }
 
     /**
-     * 构建 OkHttpClient 实例
+     * 构建 OkHttpClient 实例（线程安全）
+     * <p>
+     * 使用双重检查锁定（DCL）模式确保线程安全，避免多次创建实例。
+     * </p>
      *
      * @return OkHttpClient 实例
      */
     private static OkHttpClient build() {
-        if (get().client != null) return get().client;
-        return get().client = getBuilder().build();
+        OkHttp instance = get();
+        // 第一次检查（无锁，快速路径）
+        if (instance.client != null) {
+            return instance.client;
+        }
+
+        // 同步块（慢速路径）
+        synchronized (OkHttp.class) {
+            // 第二次检查（防止多个线程同时创建）
+            if (instance.client == null) {
+                instance.client = getBuilder().build();
+                Logger.i("OkHttpClient instance created (thread-safe)");
+            }
+            return instance.client;
+        }
     }
 
     /**
