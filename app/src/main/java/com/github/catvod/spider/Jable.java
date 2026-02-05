@@ -6,6 +6,7 @@ import com.github.catvod.bean.Vod;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -36,8 +37,21 @@ public class Jable extends Spider {
         List<Class> classes = new ArrayList<>();
         Document doc = Jsoup.parse(OkHttp.string(cateUrl, getHeaders()));
         for (Element element : doc.select("div.img-box > a")) {
-            String typeId = element.attr("href").split("/")[4];
+            String href = element.attr("href");
+            String[] parts = href.split("/");
+
+            if (parts.length <= 4) {
+                Logger.w("Jable: Invalid category URL format: " + href);
+                continue;
+            }
+
+            String typeId = parts[4];
             String typeName = element.select("div.absolute-center > h4").text();
+
+            if (typeId.isEmpty() || typeName.isEmpty()) {
+                continue;
+            }
+
             classes.add(new Class(typeId, typeName));
         }
         doc = Jsoup.parse(OkHttp.string(siteUrl, getHeaders()));
@@ -45,8 +59,16 @@ public class Jable extends Spider {
             String pic = element.select("img").attr("data-src");
             String url = element.select("a").attr("href");
             String name = element.select("div.detail > h6").text();
+
             if (pic.endsWith(".gif") || name.isEmpty()) continue;
-            String id = url.split("/")[4];
+
+            String[] parts = url.split("/");
+            if (parts.length <= 4) {
+                Logger.w("Jable: Invalid video URL format: " + url);
+                continue;
+            }
+
+            String id = parts[4];
             list.add(new Vod(id, name, pic));
         }
         return Result.string(classes, list);
@@ -61,7 +83,14 @@ public class Jable extends Spider {
             String pic = element.select("img").attr("data-src");
             String url = element.select("a").attr("href");
             String name = element.select("div.detail > h6").text();
-            String id = url.split("/")[4];
+
+            String[] parts = url.split("/");
+            if (parts.length <= 4) {
+                Logger.w("Jable: Invalid video URL format in category: " + url);
+                continue;
+            }
+
+            String id = parts[4];
             list.add(new Vod(id, name, pic));
         }
         return Result.string(list);
@@ -72,14 +101,28 @@ public class Jable extends Spider {
         Document doc = Jsoup.parse(OkHttp.string(detailUrl.concat(ids.get(0)).concat("/"), getHeaders()));
         String name = doc.select("meta[property=og:title]").attr("content");
         String pic = doc.select("meta[property=og:image]").attr("content");
-        String year = doc.select("span.inactive-color").get(0).text();
+
+        // 安全获取年份，避免 ArrayIndexOutOfBoundsException
+        String year = "";
+        org.jsoup.select.Elements yearElements = doc.select("span.inactive-color");
+        if (!yearElements.isEmpty()) {
+            year = yearElements.get(0).text().replace("上市於 ", "");
+        }
+
+        // 安全获取播放 URL
+        String hlsUrl = Util.getVar(doc.html(), "hlsUrl");
+        if (hlsUrl == null || hlsUrl.isEmpty()) {
+            Logger.w("Jable: Failed to extract hlsUrl for video: " + ids.get(0));
+            hlsUrl = "";
+        }
+
         Vod vod = new Vod();
         vod.setVodId(ids.get(0));
         vod.setVodPic(pic);
-        vod.setVodYear(year.replace("上市於 ", ""));
+        vod.setVodYear(year);
         vod.setVodName(name);
         vod.setVodPlayFrom("Jable");
-        vod.setVodPlayUrl("播放$" + Util.getVar(doc.html(), "hlsUrl"));
+        vod.setVodPlayUrl("播放$" + hlsUrl);
         return Result.string(vod);
     }
 
@@ -91,7 +134,14 @@ public class Jable extends Spider {
             String pic = element.select("img").attr("data-src");
             String url = element.select("a").attr("href");
             String name = element.select("div.detail > h6").text();
-            String id = url.split("/")[4];
+
+            String[] parts = url.split("/");
+            if (parts.length <= 4) {
+                Logger.w("Jable: Invalid video URL format in search: " + url);
+                continue;
+            }
+
+            String id = parts[4];
             list.add(new Vod(id, name, pic));
         }
         return Result.string(list);
