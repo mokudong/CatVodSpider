@@ -32,10 +32,77 @@ import java.util.Map;
 public class Local extends Spider {
 
     private SimpleDateFormat format;
+    private List<File> allowedRoots;
 
     @Override
     public void init(Context context, String extend) {
         format = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss", Locale.getDefault());
+        initAllowedRoots();
+    }
+
+    /**
+     * 初始化允许访问的根目录列表
+     * <p>
+     * 仅允许访问：
+     * <ul>
+     *   <li>外部存储根目录（/storage/emulated/0）</li>
+     *   <li>/storage 下的其他挂载点（SD卡、USB等）</li>
+     * </ul>
+     * </p>
+     */
+    private void initAllowedRoots() {
+        allowedRoots = new ArrayList<>();
+
+        // 添加外部存储根目录
+        allowedRoots.add(Environment.getExternalStorageDirectory());
+
+        // 添加 /storage 下的所有挂载点
+        File storageRoot = new File("/storage");
+        File[] storageDirs = storageRoot.listFiles();
+        if (storageDirs != null) {
+            List<String> exclude = Arrays.asList("emulated", "self");
+            for (File dir : storageDirs) {
+                if (dir.isDirectory() && !exclude.contains(dir.getName())) {
+                    allowedRoots.add(dir);
+                }
+            }
+        }
+    }
+
+    /**
+     * 验证文件路径是否安全（防止路径遍历攻击）
+     * <p>
+     * 检查目标文件的规范路径是否在允许的根目录内。
+     * </p>
+     *
+     * @param path 用户提供的文件路径
+     * @return 验证通过返回 File 对象，验证失败返回 null
+     */
+    private File validatePath(String path) {
+        if (TextUtils.isEmpty(path)) {
+            com.orhanobut.logger.Logger.w("Invalid path: empty or null");
+            return null;
+        }
+
+        try {
+            File file = new File(path);
+            String canonicalPath = file.getCanonicalPath();
+
+            // 检查是否在允许的根目录内
+            for (File root : allowedRoots) {
+                String rootCanonical = root.getCanonicalPath();
+                if (canonicalPath.startsWith(rootCanonical)) {
+                    return file;
+                }
+            }
+
+            // 路径不在允许的根目录内
+            com.orhanobut.logger.Logger.w("Path traversal attempt blocked: " + path + " -> " + canonicalPath);
+            return null;
+        } catch (Exception e) {
+            com.orhanobut.logger.Logger.e("Path validation failed for: " + path, e);
+            return null;
+        }
     }
 
     @Override
@@ -70,8 +137,23 @@ public class Local extends Spider {
             String name = Uri.parse(url).getLastPathSegment();
             return Result.string(create(name, url));
         } else {
-            File file = new File(ids.get(0));
+            // 路径遍历防护：验证文件路径
+            File file = validatePath(ids.get(0));
+            if (file == null) {
+                // 路径验证失败，返回空结果
+                com.orhanobut.logger.Logger.e("Access denied: invalid or unsafe path: " + ids.get(0));
+                return Result.string(new ArrayList<>());
+            }
+
             File parent = file.getParentFile();
+            // 验证父目录路径
+            if (parent != null) {
+                parent = validatePath(parent.getAbsolutePath());
+                if (parent == null) {
+                    return Result.string(new ArrayList<>());
+                }
+            }
+
             List<File> files = Path.list(parent);
             return Result.string(create(parent != null ? parent : file, files));
         }
@@ -82,7 +164,17 @@ public class Local extends Spider {
         if (id.startsWith("http")) {
             return Result.get().url(id).string();
         } else {
-            return Result.get().url("file://" + id).subs(getSubs(id)).string();
+            // 路径遍历防护：验证文件路径
+            File validatedFile = validatePath(id);
+            if (validatedFile == null) {
+                com.orhanobut.logger.Logger.e("Access denied: invalid or unsafe path: " + id);
+                // 返回空 URL（播放失败）
+                return Result.get().url("").string();
+            }
+
+            // 使用验证后的规范路径
+            String safePath = validatedFile.getAbsolutePath();
+            return Result.get().url("file://" + safePath).subs(getSubs(safePath)).string();
         }
     }
 
@@ -159,9 +251,23 @@ public class Local extends Spider {
 
     private List<Sub> getSubs(String path) {
         List<Sub> subs = new ArrayList<>();
-        for (File f : Path.list(new File(path).getParentFile())) {
+
+        // 验证路径
+        File validatedFile = validatePath(path);
+        if (validatedFile == null) {
+            return subs; // 返回空字幕列表
+        }
+
+        File parent = validatedFile.getParentFile();
+        if (parent == null) {
+            return subs;
+        }
+
+        for (File f : Path.list(parent)) {
             String ext = Util.getExt(f.getName());
-            if (Util.isSub(ext)) subs.add(Sub.create().name(Util.removeExt(f.getName())).ext(ext).url("file://" + f.getAbsolutePath()));
+            if (Util.isSub(ext)) {
+                subs.add(Sub.create().name(Util.removeExt(f.getName())).ext(ext).url("file://" + f.getAbsolutePath()));
+            }
         }
         return subs;
     }
