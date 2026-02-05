@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -35,8 +36,8 @@ import java.util.regex.Pattern;
  */
 public class YHDM extends Spider {
 
-    private static String siteUrl = "https://www.857fans.com";
-    private final Map<String, String> configCache = new HashMap<>();
+    private String siteUrl = "https://www.857fans.com";
+    private final Map<String, String> configCache = new ConcurrentHashMap<>();
 
     private Map<String, String> getHeader() {
         Map<String, String> header = new HashMap<>();
@@ -144,11 +145,12 @@ public class YHDM extends Spider {
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
         String todayDate = dateFormat.format(new Date());
         String ConfigUrl = siteUrl + "/static/js/playerconfig.js?t=" + todayDate;
-        if (!configCache.containsKey(ConfigUrl)) {
-            String ConfigContent = OkHttp.string(ConfigUrl, getHeader());
-            String ConfigObject = matcher(ConfigContent, "player_list=(.*?),MacPlayerConfig");
-            configCache.put(ConfigUrl, ConfigObject);
-        }
+
+        // 使用 computeIfAbsent 保证原子操作，避免重复请求
+        configCache.computeIfAbsent(ConfigUrl, url -> {
+            String ConfigContent = OkHttp.string(url, getHeader());
+            return matcher(ConfigContent, "player_list=(.*?),MacPlayerConfig");
+        });
         String content = OkHttp.string(siteUrl + id, getHeader());
         String json = matcher(content, "player_aaaa=(.*?)</script>");
         JSONObject player = new JSONObject(json);
