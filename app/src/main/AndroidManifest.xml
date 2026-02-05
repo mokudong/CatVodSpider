@@ -4,9 +4,25 @@
 
     <uses-sdk tools:overrideLibrary="com.whl.quickjs.android" />
 
+    <!-- 网络访问权限（必需）：用于爬虫请求、视频流播放 -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- 外部存储读取权限：用于本地视频文件浏览（Local.java） -->
+    <!-- Android 13+ (API 33+) 使用细粒度媒体权限替代 -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- 外部存储写入权限：用于视频缓存和下载（Path.java） -->
+    <!-- Android 10+ (API 29+) 使用分区存储，此权限仅用于兼容旧版本 -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"
+        tools:ignore="ScopedStorage" />
+
+    <!-- Android 13+ (API 33+) 新增细粒度媒体权限（推荐） -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <application
         android:icon="@mipmap/ic_launcher"
