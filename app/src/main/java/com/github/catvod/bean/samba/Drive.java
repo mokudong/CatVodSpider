@@ -12,7 +12,9 @@ import com.hierynomus.smbj.auth.AuthenticationContext;
 import com.hierynomus.smbj.connection.Connection;
 import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.share.DiskShare;
+import com.orhanobut.logger.Logger;
 
+import java.io.IOException;
 import java.lang.reflect.Type;
 import java.util.List;
 
@@ -59,42 +61,109 @@ public class Drive {
         return new Class(getName(), getName(), "1");
     }
 
+    /**
+     * 初始化 SMB 连接
+     * <p>
+     * 改进异常处理，使用 Logger 记录错误。
+     * </p>
+     */
     private void init() {
         try {
             smbClient = new SMBClient();
             Uri uri = Uri.parse(getServer());
+
+            if (uri.getPath() == null || uri.getPath().length() <= 1) {
+                Logger.w("Invalid SMB path: " + getServer());
+                return;
+            }
+
             String[] parts = uri.getPath().substring(1).split("/", 2);
-            connection = smbClient.connect(uri.getHost(), uri.getPort() != -1 ? uri.getPort() : SMBClient.DEFAULT_PORT);
+            if (parts.length == 0 || parts[0].isEmpty()) {
+                Logger.w("Invalid share name in SMB path: " + getServer());
+                return;
+            }
+
+            int port = uri.getPort() != -1 ? uri.getPort() : SMBClient.DEFAULT_PORT;
+            connection = smbClient.connect(uri.getHost(), port);
             session = connection.authenticate(getAuthentication(uri));
             diskShare = (DiskShare) session.connectShare(parts[0]);
             subPath = parts.length > 1 ? parts[1] : "";
-        } catch (Exception e) {
-            e.printStackTrace();
+
+            Logger.i("SMB connection initialized: " + getName());
+
+        } catch (IOException e) {
+            Logger.e("Network error while connecting to SMB: " + getServer(), e);
+        } catch (IllegalArgumentException e) {
+            Logger.e("Invalid SMB server URL: " + getServer(), e);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            Logger.e("Invalid SMB path format: " + getServer(), e);
         }
     }
 
+    /**
+     * 获取 SMB 认证信息
+     *
+     * @param uri SMB URI
+     * @return 认证上下文
+     */
     private AuthenticationContext getAuthentication(Uri uri) {
         String userInfo = uri.getUserInfo();
-        if (userInfo == null) return AuthenticationContext.guest();
+        if (userInfo == null) {
+            Logger.d("Using guest authentication for SMB");
+            return AuthenticationContext.guest();
+        }
+
         String[] parts = userInfo.split(":", 2);
         String username = parts[0];
         char[] password = parts.length > 1 ? parts[1].toCharArray() : new char[0];
+
+        Logger.d("Using username/password authentication for SMB: " + username);
         return new AuthenticationContext(username, password, null);
     }
 
+    /**
+     * 释放 SMB 连接资源
+     * <p>
+     * 改进异常处理，确保所有资源都被释放。
+     * </p>
+     */
     public void release() {
         try {
-            if (diskShare != null) diskShare.close();
-            if (session != null) session.close();
-            if (connection != null) connection.close();
-            if (smbClient != null) smbClient.close();
-        } catch (Exception e) {
-            e.printStackTrace();
+            if (diskShare != null) {
+                diskShare.close();
+            }
+        } catch (IOException e) {
+            Logger.e("Failed to close disk share", e);
+        }
+
+        try {
+            if (session != null) {
+                session.close();
+            }
+        } catch (IOException e) {
+            Logger.e("Failed to close session", e);
+        }
+
+        try {
+            if (connection != null) {
+                connection.close();
+            }
+        } catch (IOException e) {
+            Logger.e("Failed to close connection", e);
+        }
+
+        try {
+            if (smbClient != null) {
+                smbClient.close();
+            }
+        } catch (IOException e) {
+            Logger.e("Failed to close SMB client", e);
         } finally {
             connection = null;
             diskShare = null;
             smbClient = null;
             session = null;
+            Logger.d("SMB resources released");
         }
     }
 

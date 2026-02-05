@@ -55,33 +55,48 @@ public class MainActivity extends Activity {
         binding.proxy.setOnClickListener(view -> executor.execute(this::proxy));
     }
 
+    /**
+     * 初始化爬虫
+     * <p>
+     * 改进异常处理，使用 Logger 记录错误。
+     * </p>
+     */
     private void initSpider() {
         try {
             Init.init(getApplicationContext());
             spider.init(this, "");
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to initialize spider", e);
         }
     }
 
+    /**
+     * 测试首页内容
+     */
     public void homeContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.homeContent(true)));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get home content", e);
         }
     }
 
+    /**
+     * 测试首页推荐视频
+     */
     public void homeVideoContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.homeVideoContent()));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get home video content", e);
         }
     }
 
+    /**
+     * 测试分类内容
+     */
     public void categoryContent() {
         try {
             HashMap<String, String> extend = new HashMap<>();
@@ -90,52 +105,67 @@ public class MainActivity extends Activity {
             String result = gson.toJson(JsonParser.parseString(spider.categoryContent("3", "2", true, extend)));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get category content", e);
         }
     }
 
+    /**
+     * 测试详情内容
+     */
     public void detailContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.detailContent(List.of("78702"))));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get detail content", e);
         }
     }
 
+    /**
+     * 测试播放地址
+     */
     public void playerContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.playerContent("", "382044/1/78", new ArrayList<>())));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get player content", e);
         }
     }
 
+    /**
+     * 测试搜索
+     */
     public void searchContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.searchContent("我的人间烟火", false)));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to search content", e);
         }
     }
 
+    /**
+     * 测试直播
+     */
     public void liveContent() {
         try {
             String result = gson.toJson(JsonParser.parseString(spider.liveContent("")));
             Init.post(() -> binding.result.setText(result));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to get live content", e);
         }
     }
 
+    /**
+     * 测试代理
+     */
     public void proxy() {
         try {
             Map<String, String> params = new HashMap<>();
-            Logger.t("liveContent").d(spider.proxy(params));
+            Logger.t("proxy").d(spider.proxy(params));
         } catch (Throwable e) {
-            e.printStackTrace();
+            Logger.e("Failed to test proxy", e);
         }
     }
 }
