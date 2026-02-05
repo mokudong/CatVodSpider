@@ -4,6 +4,7 @@ import android.text.TextUtils;
 
 import com.github.catvod.crawler.SpiderDebug;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 
 import java.io.IOException;
 import java.util.Map;
@@ -14,6 +15,7 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 class OkRequest {
 
@@ -64,9 +66,18 @@ class OkRequest {
 
     public OkResult execute(OkHttpClient client) {
         try (Response res = client.newCall(request).execute()) {
-            return new OkResult(res.code(), res.body().string(), res.headers().toMultimap());
+            ResponseBody body = res.body();
+            if (body == null) {
+                Logger.e("Response body is null for URL: " + url);
+                return new OkResult(res.code(), "", res.headers().toMultimap());
+            }
+            return new OkResult(res.code(), body.string(), res.headers().toMultimap());
         } catch (IOException e) {
+            Logger.e("Network request failed for URL: " + url, e);
             SpiderDebug.log(e);
+            return new OkResult();
+        } catch (Exception e) {
+            Logger.e("Unexpected error during request for URL: " + url, e);
             return new OkResult();
         }
     }
