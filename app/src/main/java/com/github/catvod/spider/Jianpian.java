@@ -88,12 +88,16 @@ public class Jianpian extends Spider {
             parts = parts.replace("\"", "");
             String[] domain = parts.split(",");
 
+            // 使用临时变量进行初始化，避免竞态条件
+            String validSiteUrl = null;
+            String validImgDomain = null;
+
             // 遍历域名，找到可用的
             for (String d : domain) {
-                siteUrl = "https://wangerniu." + d;
-                Logger.d("Trying domain: " + siteUrl);
+                String testUrl = "https://wangerniu." + d;
+                Logger.d("Trying domain: " + testUrl);
 
-                String json = OkHttp.string(siteUrl + "/api/v2/settings/resourceDomainConfig");
+                String json = OkHttp.string(testUrl + "/api/v2/settings/resourceDomainConfig");
                 if (TextUtils.isEmpty(json)) {
                     Logger.d("Domain returned empty response, trying next");
                     continue;
@@ -108,19 +112,25 @@ public class Jianpian extends Spider {
                     if (!TextUtils.isEmpty(imgDomainStr)) {
                         String[] imgDomains = imgDomainStr.split(",");
                         if (imgDomains.length > 0) {
-                            imgDomain = imgDomains[0];
-                            Logger.i("Jianpian initialized successfully with domain: " + siteUrl);
-                            Logger.i("Image domain: " + imgDomain);
+                            // 找到有效域名，保存到临时变量
+                            validSiteUrl = testUrl;
+                            validImgDomain = imgDomains[0];
                             break;
                         }
                     }
                 } catch (JsonValidator.ValidationException e) {
-                    Logger.w("Failed to parse response from domain: " + siteUrl, e);
+                    Logger.w("Failed to parse response from domain: " + testUrl, e);
                     // 继续尝试下一个域名
                 }
             }
 
-            if (TextUtils.isEmpty(imgDomain)) {
+            // 原子性赋值（只在最后成功时赋值一次）
+            if (validSiteUrl != null && validImgDomain != null) {
+                this.siteUrl = validSiteUrl;
+                this.imgDomain = validImgDomain;
+                Logger.i("Jianpian initialized successfully with domain: " + this.siteUrl);
+                Logger.i("Image domain: " + this.imgDomain);
+            } else {
                 Logger.w("Failed to initialize Jianpian: no valid domain found");
             }
 
