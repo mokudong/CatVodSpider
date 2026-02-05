@@ -137,12 +137,20 @@ public class Path {
     public static File create(File file) {
         try {
             if (file.getParentFile() != null) mkdir(file.getParentFile());
-            if (!file.canWrite()) file.setWritable(true);
             if (!file.exists()) file.createNewFile();
-            Shell.exec("chmod 777 " + file);
+
+            // 设置文件权限（仅所有者可读写，其他用户只读）
+            if (!file.canWrite()) file.setWritable(true, false);  // 所有者可写
+            file.setReadable(true, false);  // 所有用户可读
+            file.setExecutable(false);  // 不可执行
+
+            // ⚠️ 安全提示：不再使用 chmod 777（所有用户可读写执行）
+            // 原代码: Shell.exec("chmod 777 " + file);  // 不安全！
+            // 现在使用 Java 文件权限 API，等效于 chmod 644
+
             return file;
         } catch (IOException e) {
-            e.printStackTrace();
+            Logger.e("Failed to create file: " + file.getAbsolutePath(), e);
             return file;
         }
     }
