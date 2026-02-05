@@ -55,7 +55,7 @@ public class Path {
         try {
             return new String(readToByte(is), StandardCharsets.UTF_8);
         } catch (IOException e) {
-            e.printStackTrace();
+            com.orhanobut.logger.Logger.e("Failed to read from InputStream", e);
             return "";
         }
     }
@@ -76,14 +76,12 @@ public class Path {
     }
 
     public static File write(File file, byte[] data) {
-        try {
-            FileOutputStream fos = new FileOutputStream(create(file));
+        try (FileOutputStream fos = new FileOutputStream(create(file))) {
             fos.write(data);
             fos.flush();
-            fos.close();
             return file;
         } catch (IOException e) {
-            e.printStackTrace();
+            com.orhanobut.logger.Logger.e("Failed to write file: " + file.getAbsolutePath(), e);
             return file;
         }
     }
@@ -95,21 +93,23 @@ public class Path {
     }
 
     public static void copy(File in, File out) {
-        try {
-            copy(new FileInputStream(in), out);
-        } catch (IOException ignored) {
+        try (FileInputStream fis = new FileInputStream(in)) {
+            copy(fis, out);
+        } catch (IOException e) {
+            com.orhanobut.logger.Logger.e("Failed to copy file from " + in.getAbsolutePath() + " to " + out.getAbsolutePath(), e);
         }
     }
 
     public static void copy(InputStream in, File out) {
-        try {
+        try (FileOutputStream fos = new FileOutputStream(create(out))) {
             int read;
             byte[] buffer = new byte[16384];
-            FileOutputStream fos = new FileOutputStream(create(out));
-            while ((read = in.read(buffer)) != -1) fos.write(buffer, 0, read);
-            fos.close();
-            in.close();
-        } catch (IOException ignored) {
+            while ((read = in.read(buffer)) != -1) {
+                fos.write(buffer, 0, read);
+            }
+            // 注意：不关闭 in，因为它可能被调用者管理
+        } catch (IOException e) {
+            com.orhanobut.logger.Logger.e("Failed to copy stream to file: " + out.getAbsolutePath(), e);
         }
     }
 
