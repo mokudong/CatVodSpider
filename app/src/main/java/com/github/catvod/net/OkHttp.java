@@ -19,6 +19,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
 import okhttp3.Call;
+import okhttp3.CertificatePinner;
 import okhttp3.Dns;
 import okhttp3.Headers;
 import okhttp3.Interceptor;
@@ -87,9 +88,37 @@ import okhttp3.ResponseBody;
 public class OkHttp {
 
     /**
-     * 默认超时时间：15秒
+     * 默认超时时间配置
+     * <p>
+     * 根据不同请求类型设置合理的超时时间：
+     * <ul>
+     *   <li>连接超时：建立 TCP 连接的最大时间</li>
+     *   <li>读取超时：从服务器读取数据的最大时间</li>
+     *   <li>写入超时：向服务器写入数据的最大时间</li>
+     * </ul>
+     * </p>
      */
-    private static final long TIMEOUT = TimeUnit.SECONDS.toMillis(15);
+    private static final long TIMEOUT = TimeUnit.SECONDS.toMillis(15);  // 通用请求：15秒
+
+    /**
+     * 快速请求超时（用于 API 健康检查等）
+     */
+    public static final long TIMEOUT_FAST = TimeUnit.SECONDS.toMillis(5);  // 5秒
+
+    /**
+     * 慢速请求超时（用于大文件下载、视频流等）
+     */
+    public static final long TIMEOUT_SLOW = TimeUnit.SECONDS.toMillis(30);  // 30秒
+
+    /**
+     * 连接超时（建立 TCP 连接）
+     */
+    public static final long CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(10);  // 10秒
+
+    /**
+     * 调用超时（整个请求完成的最大时间，包括重试）
+     */
+    public static final long CALL_TIMEOUT = TimeUnit.SECONDS.toMillis(60);  // 60秒
 
     /**
      * POST 请求方法常量
@@ -117,6 +146,15 @@ public class OkHttp {
     private volatile OkHttpClient client;
 
     /**
+     * 自定义客户端（用于依赖注入和测试）
+     * <p>
+     * 通过 {@link #setCustomClient(OkHttpClient)} 设置后，
+     * 所有请求将使用此客户端而非默认单例。
+     * </p>
+     */
+    private static volatile OkHttpClient customClient;
+
+    /**
      * 单例加载器（延迟初始化）
      */
     private static class Loader {
@@ -130,6 +168,52 @@ public class OkHttp {
      */
     private static OkHttp get() {
         return Loader.INSTANCE;
+    }
+
+    /**
+     * 设置自定义客户端（用于依赖注入和测试）
+     * <p>
+     * <b>用途：</b>
+     * <ul>
+     *   <li>单元测试：注入 MockWebServer 客户端</li>
+     *   <li>集成测试：注入自定义拦截器（日志、重试）</li>
+     *   <li>性能测试：注入监控拦截器</li>
+     * </ul>
+     * </p>
+     * <p>
+     * <b>示例：单元测试</b>
+     * <pre>
+     * // 测试前注入 Mock 客户端
+     * OkHttpClient mockClient = new OkHttpClient.Builder()
+     *     .addInterceptor(new MockInterceptor())
+     *     .build();
+     * OkHttp.setCustomClient(mockClient);
+     *
+     * // 执行测试...
+     *
+     * // 测试后清理
+     * OkHttp.resetCustomClient();
+     * </pre>
+     * </p>
+     *
+     * @param client 自定义客户端实例，传入 null 则使用默认单例
+     */
+    public static void setCustomClient(OkHttpClient client) {
+        customClient = client;
+        Logger.i("Custom OkHttpClient injected for testing/customization");
+    }
+
+    /**
+     * 重置自定义客户端（测试清理）
+     * <p>
+     * 测试结束后调用此方法，恢复使用默认单例客户端。
+     * </p>
+     */
+    public static void resetCustomClient() {
+        customClient = null;
+        // 同时清理单例实例的缓存客户端
+        get().client = null;
+        Logger.i("Custom OkHttpClient reset, using default singleton");
     }
 
     /**
@@ -392,13 +476,40 @@ public class OkHttp {
      *
      * @return OkHttpClient.Builder
      */
+    /**
+     * 创建 OkHttpClient.Builder
+     * <p>
+     * 配置项包括：
+     * <ul>
+     *   <li>自定义 DNS（从 Spider 获取）</li>
+     *   <li>连接超时：10秒（建立 TCP 连接）</li>
+     *   <li>读取超时：15秒（从服务器读取数据）</li>
+     *   <li>写入超时：15秒（向服务器写入数据）</li>
+     *   <li>调用超时：60秒（整个请求完成时间，包括重试）</li>
+     *   <li>响应大小限制：50MB</li>
+     *   <li>SSL 证书验证（生产环境启用）</li>
+     * </ul>
+     * </p>
+     *
+     * @return OkHttpClient.Builder
+     */
     private static OkHttpClient.Builder getBuilder() {
         OkHttpClient.Builder builder = new OkHttpClient.Builder()
                 .dns(safeDns())
-                .connectTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+                .connectTimeout(CONNECT_TIMEOUT, TimeUnit.MILLISECONDS)
                 .readTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
                 .writeTimeout(TIMEOUT, TimeUnit.MILLISECONDS)
+                .callTimeout(CALL_TIMEOUT, TimeUnit.MILLISECONDS)  // 添加调用超时
                 .addInterceptor(responseSizeInterceptor());
+
+        // 仅在生产环境启用证书固定（可选的高级安全特性）
+        if (!BuildConfig.DISABLE_SSL_VERIFICATION) {
+            CertificatePinner pinner = buildCertificatePinner();
+            if (pinner != null) {
+                builder.certificatePinner(pinner);
+                Logger.i("✓ Certificate Pinning is ENABLED (enhanced security)");
+            }
+        }
 
         // 仅在调试模式下禁用 SSL 证书验证
         if (BuildConfig.DISABLE_SSL_VERIFICATION) {
@@ -419,6 +530,14 @@ public class OkHttp {
 
     /**
      * 获取自定义超时的 OkHttpClient
+     * <p>
+     * 用于需要特殊超时配置的场景：
+     * <ul>
+     *   <li>健康检查：使用 TIMEOUT_FAST（5秒）</li>
+     *   <li>大文件下载：使用 TIMEOUT_SLOW（30秒）</li>
+     *   <li>视频流请求：使用 TIMEOUT_SLOW（30秒）</li>
+     * </ul>
+     * </p>
      *
      * @param timeout 超时时间（毫秒）
      * @return OkHttpClient 实例
@@ -432,18 +551,115 @@ public class OkHttp {
     }
 
     /**
-     * 获取 OkHttpClient 实例
+     * 获取 OkHttpClient 实例（支持依赖注入）
      * <p>
-     * 优先使用 Spider 自定义的 client，如果没有则使用默认配置。
+     * 客户端获取优先级：
+     * <ol>
+     *   <li>自定义客户端（{@link #setCustomClient(OkHttpClient)}）- 最高优先级，用于测试</li>
+     *   <li>Spider 自定义客户端（{@link Spider#client()}）- 爬虫自定义配置</li>
+     *   <li>默认单例客户端（{@link #build()}）- 默认配置</li>
+     * </ol>
+     * </p>
+     * <p>
+     * 这种设计提高了可测试性：
+     * <ul>
+     *   <li>生产环境：使用默认单例或 Spider 配置</li>
+     *   <li>测试环境：通过 setCustomClient() 注入 Mock 客户端</li>
+     * </ul>
      * </p>
      *
      * @return OkHttpClient 实例
      */
     private static OkHttpClient client() {
+        // 优先级1: 自定义客户端（测试/依赖注入）
+        if (customClient != null) {
+            return customClient;
+        }
+
+        // 优先级2: Spider 自定义客户端
         try {
             return Objects.requireNonNull(Spider.client());
         } catch (Throwable e) {
-            return build();
+            // Spider 未提供自定义客户端
+        }
+
+        // 优先级3: 默认单例客户端
+        return build();
+    }
+
+    /**
+     * 构建证书固定配置（Certificate Pinning）
+     * <p>
+     * <b>什么是证书固定？</b><br>
+     * 证书固定是一种高级安全技术，通过在应用中硬编码服务器证书的公钥指纹（SHA-256），
+     * 防止中间人攻击（MITM），即使攻击者拥有受信任 CA 签发的证书也无法通过验证。
+     * </p>
+     * <p>
+     * <b>使用场景：</b>
+     * <ul>
+     *   <li>保护关键 API 接口（登录、支付）</li>
+     *   <li>防御恶意 CA 证书攻击</li>
+     *   <li>企业内部服务（自签名证书）</li>
+     * </ul>
+     * </p>
+     * <p>
+     * <b>如何获取证书指纹？</b>
+     * <pre>
+     * # 方法1: 使用 openssl
+     * openssl s_client -connect api.example.com:443 | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+     *
+     * # 方法2: 使用 OkHttp 自动生成（推荐）
+     * CertificatePinner pinner = new CertificatePinner.Builder()
+     *     .add("api.example.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+     *     .build();
+     * // 运行后查看日志，OkHttp 会打印实际的证书指纹
+     * </pre>
+     * </p>
+     * <p>
+     * <b>配置示例：</b>
+     * <pre>
+     * CertificatePinner pinner = new CertificatePinner.Builder()
+     *     // GitHub API (示例)
+     *     .add("api.github.com", "sha256/WoiWRyIOVNa9ihaBciRSC7XHjliYS9VwUGOIud4PB18=")
+     *     // 备用证书（证书轮换）
+     *     .add("api.github.com", "sha256/RRM1dGqnDFsCJXBTHky16vi1obOlCgFFn/yOhI/y+ho=")
+     *     // 其他域名...
+     *     .build();
+     * </pre>
+     * </p>
+     * <p>
+     * <b>⚠️ 注意事项：</b>
+     * <ul>
+     *   <li>证书过期或轮换时需要更新指纹（推荐配置多个备用证书）</li>
+     *   <li>调试模式下自动禁用（避免影响开发）</li>
+     *   <li>指纹错误会导致所有请求失败（请谨慎配置）</li>
+     * </ul>
+     * </p>
+     *
+     * @return CertificatePinner 实例，如果未配置返回 null
+     */
+    private static CertificatePinner buildCertificatePinner() {
+        try {
+            // TODO: 从配置文件读取证书固定配置
+            // 示例: 可以从 Spider.getPinnedCertificates() 获取配置
+
+            // 当前实现: 默认不启用证书固定
+            // 如需启用，请参考上方文档添加证书指纹
+
+            /*
+            // 示例配置（取消注释后启用）:
+            CertificatePinner pinner = new CertificatePinner.Builder()
+                // 添加您的 API 域名和证书指纹
+                .add("api.example.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+                .add("api.example.com", "sha256/BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=")  // 备用证书
+                .build();
+            return pinner;
+            */
+
+            return null;  // 默认不启用
+        } catch (Exception e) {
+            Logger.e("Failed to build CertificatePinner", e);
+            return null;
         }
     }
 
