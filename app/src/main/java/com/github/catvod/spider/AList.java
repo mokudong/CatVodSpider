@@ -83,7 +83,8 @@ public class AList extends Spider {
 
     private String post(Drive drive, String url, String param, boolean retry) {
         String response = OkHttp.post(url, param, drive.getHeader()).getBody();
-        SpiderDebug.log(response);
+        // 使用脱敏日志输出（响应可能包含 token）
+        SpiderDebug.logSanitized(response);
         if (retry && response.contains("Guest user is disabled") && login(drive)) return post(drive, url, param, false);
         return response;
     }
