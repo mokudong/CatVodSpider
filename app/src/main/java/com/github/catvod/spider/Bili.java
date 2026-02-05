@@ -29,6 +29,7 @@ import java.io.File;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -74,7 +75,11 @@ public class Bili extends Spider {
 
         // 2. 如果是 URL，从远程获取
         if (cookie.startsWith("http")) {
-            cookie = OkHttp.string(cookie).trim();
+            String remoteCookie = OkHttp.string(cookie);
+            cookie = (remoteCookie != null) ? remoteCookie.trim() : "";
+            if (!TextUtils.isEmpty(cookie)) {
+                Logger.i("Loaded Bilibili cookie from remote URL");
+            }
         }
 
         // 3. 如果配置为空，从安全存储读取
@@ -119,11 +124,41 @@ public class Bili extends Spider {
         }
     }
 
+    /**
+     * Filter 缓存
+     * <p>
+     * 使用静态 final 缓存 Filter 对象，避免重复创建。
+     * </p>
+     */
+    private static final List<Filter> FILTER_CACHE = Collections.unmodifiableList(
+            Arrays.asList(
+                    new Filter("order", "排序", Arrays.asList(
+                            new Filter.Value("預設", "totalrank"),
+                            new Filter.Value("最多點擊", "click"),
+                            new Filter.Value("最新發布", "pubdate"),
+                            new Filter.Value("最多彈幕", "dm"),
+                            new Filter.Value("最多收藏", "stow")
+                    )),
+                    new Filter("duration", "時長", Arrays.asList(
+                            new Filter.Value("全部時長", "0"),
+                            new Filter.Value("60分鐘以上", "4"),
+                            new Filter.Value("30~60分鐘", "3"),
+                            new Filter.Value("10~30分鐘", "2"),
+                            new Filter.Value("10分鐘以下", "1")
+                    ))
+            )
+    );
+
+    /**
+     * 获取筛选条件
+     * <p>
+     * 返回缓存的 Filter 对象，避免重复创建。
+     * </p>
+     *
+     * @return Filter 列表
+     */
     private List<Filter> getFilter() {
-        List<Filter> items = new ArrayList<>();
-        items.add(new Filter("order", "排序", Arrays.asList(new Filter.Value("預設", "totalrank"), new Filter.Value("最多點擊", "click"), new Filter.Value("最新發布", "pubdate"), new Filter.Value("最多彈幕", "dm"), new Filter.Value("最多收藏", "stow"))));
-        items.add(new Filter("duration", "時長", Arrays.asList(new Filter.Value("全部時長", "0"), new Filter.Value("60分鐘以上", "4"), new Filter.Value("30~60分鐘", "3"), new Filter.Value("10~30分鐘", "2"), new Filter.Value("10分鐘以下", "1"))));
-        return items;
+        return FILTER_CACHE;
     }
 
     private File getCache() {
@@ -146,11 +181,18 @@ public class Bili extends Spider {
     }
 
     @Override
-    public String homeContent(boolean filter) {
+    public String homeContent(boolean filter) throws Exception {
         if (extend.has("json")) return OkHttp.string(extend.get("json").getAsString());
         List<Class> classes = new ArrayList<>();
         LinkedHashMap<String, List<Filter>> filters = new LinkedHashMap<>();
-        String[] types = extend.get("type").getAsString().split("#");
+
+        // 使用 Json.safeStringSplit 替代手动分割，提供默认值
+        String[] types = Json.safeStringSplit(extend, "type", "#");
+        if (types.length == 0) {
+            Logger.w("No types found in extend config, returning empty content");
+            return Result.string(classes, filters);
+        }
+
         for (String type : types) {
             classes.add(new Class(type));
             filters.put(type, getFilter());
@@ -192,10 +234,27 @@ public class Bili extends Spider {
     }
 
     @Override
-    public String detailContent(List<String> ids) {
+    public String detailContent(List<String> ids) throws Exception {
+        // 空指针防护
+        if (ids == null || ids.isEmpty()) {
+            Logger.w("detailContent called with null or empty ids");
+            return Result.string(new ArrayList<>());
+        }
+
+        String id = ids.get(0);
+        if (id == null || id.isEmpty()) {
+            Logger.w("detailContent called with null or empty id");
+            return Result.string(new ArrayList<>());
+        }
+
         if (!login) checkLogin();
 
-        String[] split = ids.get(0).split("@");
+        String[] split = id.split("@");
+        if (split.length < 2) {
+            Logger.w("Invalid video id format, expected 'bvid@aid': " + id);
+            return Result.string(new ArrayList<>());
+        }
+
         String bvid = split[0];
         String aid = split[1];
 
@@ -203,7 +262,7 @@ public class Bili extends Spider {
         String json = OkHttp.string(api, getHeader());
         Data detail = Resp.objectFrom(json).getData();
         Vod vod = new Vod();
-        vod.setVodId(ids.get(0));
+        vod.setVodId(id);
         vod.setVodPic(detail.getPic());
         vod.setVodName(detail.getTitle());
         vod.setTypeName(detail.getType());

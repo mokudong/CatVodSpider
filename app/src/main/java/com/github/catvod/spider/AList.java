@@ -40,15 +40,43 @@ import java.util.concurrent.TimeUnit;
 
 public class AList extends Spider {
 
+    /**
+     * Filter 缓存
+     * <p>
+     * 使用静态 final 缓存 Filter 对象，避免重复创建。
+     * Filter 是不可变对象，可以安全地在多个实例间共享。
+     * </p>
+     */
+    private static final List<Filter> FILTER_CACHE = Collections.unmodifiableList(
+            Arrays.asList(
+                    new Filter("type", "排序類型", Arrays.asList(
+                            new Filter.Value("預設", ""),
+                            new Filter.Value("名稱", "name"),
+                            new Filter.Value("大小", "size"),
+                            new Filter.Value("修改時間", "date")
+                    )),
+                    new Filter("order", "排序方式", Arrays.asList(
+                            new Filter.Value("預設", ""),
+                            new Filter.Value("⬆", "asc"),
+                            new Filter.Value("⬇", "desc")
+                    ))
+            )
+    );
+
     private ExecutorService executor;
     private List<Drive> drives;
     private String ext;
 
+    /**
+     * 获取筛选条件
+     * <p>
+     * 返回缓存的 Filter 对象，避免重复创建。
+     * </p>
+     *
+     * @return Filter 列表
+     */
     private List<Filter> getFilter() {
-        List<Filter> items = new ArrayList<>();
-        items.add(new Filter("type", "排序類型", Arrays.asList(new Filter.Value("預設", ""), new Filter.Value("名稱", "name"), new Filter.Value("大小", "size"), new Filter.Value("修改時間", "date"))));
-        items.add(new Filter("order", "排序方式", Arrays.asList(new Filter.Value("預設", ""), new Filter.Value("⬆", "asc"), new Filter.Value("⬇", "desc"))));
-        return items;
+        return FILTER_CACHE;
     }
 
     private void fetchRule() {
@@ -132,8 +160,19 @@ public class AList extends Spider {
     }
 
     @Override
-    public String detailContent(List<String> ids) {
+    public String detailContent(List<String> ids) throws Exception {
+        // 空指针防护
+        if (ids == null || ids.isEmpty()) {
+            Logger.w("detailContent called with null or empty ids");
+            return Result.string(new ArrayList<>());
+        }
+
         String id = ids.get(0);
+        if (id == null || id.isEmpty()) {
+            Logger.w("detailContent called with null or empty id");
+            return Result.string(new ArrayList<>());
+        }
+
         String key = id.contains("/") ? id.substring(0, id.indexOf("/")) : id;
         String path = id.substring(0, id.lastIndexOf("/"));
         String name = path.substring(path.lastIndexOf("/") + 1);
