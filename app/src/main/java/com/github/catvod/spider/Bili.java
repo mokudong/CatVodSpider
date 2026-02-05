@@ -18,7 +18,9 @@ import com.github.catvod.crawler.Spider;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.utils.Json;
 import com.github.catvod.utils.Path;
+import com.github.catvod.utils.SecureStorage;
 import com.github.catvod.utils.Util;
+import com.orhanobut.logger.Logger;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -54,11 +56,67 @@ public class Bili extends Spider {
         return headers;
     }
 
+    /**
+     * 设置 Cookie
+     * <p>
+     * Cookie 加载优先级：
+     * <ol>
+     *   <li>配置文件中的 cookie 参数（可以是URL或直接的cookie值）</li>
+     *   <li>SecureStorage 加密存储中的 cookie</li>
+     *   <li>默认 COOKIE 常量</li>
+     * </ol>
+     * Cookie 最终保存到 SecureStorage 加密存储，确保安全性。
+     * </p>
+     */
     private void setCookie() {
+        // 1. 从配置文件读取 cookie
         cookie = extend.get("cookie").getAsString();
-        if (cookie.startsWith("http")) cookie = OkHttp.string(cookie).trim();
-        if (TextUtils.isEmpty(cookie)) cookie = Path.read(getCache());
-        if (TextUtils.isEmpty(cookie)) cookie = COOKIE;
+
+        // 2. 如果是 URL，从远程获取
+        if (cookie.startsWith("http")) {
+            cookie = OkHttp.string(cookie).trim();
+        }
+
+        // 3. 如果配置为空，从安全存储读取
+        if (TextUtils.isEmpty(cookie)) {
+            try {
+                cookie = SecureStorage.getString("bili_cookie", "");
+                if (!TextUtils.isEmpty(cookie)) {
+                    Logger.i("Loaded Bilibili cookie from SecureStorage");
+                }
+            } catch (Exception e) {
+                Logger.e("Failed to load cookie from SecureStorage", e);
+
+                // 降级方案：从旧文件读取（用于数据迁移）
+                cookie = Path.read(getCache());
+                if (!TextUtils.isEmpty(cookie)) {
+                    Logger.w("Loaded cookie from legacy file, will migrate to SecureStorage");
+                    // 迁移到安全存储
+                    try {
+                        SecureStorage.putString("bili_cookie", cookie);
+                        Logger.i("Migrated cookie to SecureStorage successfully");
+                    } catch (Exception ex) {
+                        Logger.e("Failed to migrate cookie to SecureStorage", ex);
+                    }
+                }
+            }
+        }
+
+        // 4. 如果仍为空，使用默认值
+        if (TextUtils.isEmpty(cookie)) {
+            cookie = COOKIE;
+            Logger.w("Using default Bilibili cookie");
+        }
+
+        // 5. 保存到安全存储（如果不是默认值）
+        if (!cookie.equals(COOKIE)) {
+            try {
+                SecureStorage.putString("bili_cookie", cookie);
+                Logger.i("Saved Bilibili cookie to SecureStorage");
+            } catch (Exception e) {
+                Logger.e("Failed to save cookie to SecureStorage", e);
+            }
+        }
     }
 
     private List<Filter> getFilter() {
@@ -73,7 +131,16 @@ public class Bili extends Spider {
     }
 
     @Override
-    public void init(Context context, String extend) {
+    public void init(Context context, String extend) throws Exception {
+        // 初始化 SecureStorage（如果尚未初始化）
+        try {
+            SecureStorage.init(context);
+        } catch (Exception e) {
+            Logger.e("Failed to initialize SecureStorage", e);
+            // SecureStorage 初始化失败不应阻止爬虫加载
+            // setCookie() 方法会降级到文件读取
+        }
+
         this.extend = Json.safeObject(extend);
         setCookie();
     }
