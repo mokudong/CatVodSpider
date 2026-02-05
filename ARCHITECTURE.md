@@ -330,6 +330,35 @@ public class MySpider implements ISpider {
 }
 ```
 
+### 使用 OkHttpClientAdapter
+
+项目已提供 `OkHttpClientAdapter` 实现 IHttpClient 接口：
+
+```java
+// 方式1：单例模式（推荐）
+IHttpClient httpClient = OkHttpClientAdapter.getInstance();
+String response = httpClient.get("https://api.example.com/list");
+
+// 方式2：依赖注入
+public class MySpider extends Spider {
+    private final IHttpClient httpClient;
+
+    public MySpider(IHttpClient httpClient) {
+        this.httpClient = httpClient;
+    }
+
+    @Override
+    public String searchContent(String keyword, boolean quick) {
+        String response = httpClient.get("https://api.example.com/search?q=" + keyword);
+        return parseResponse(response);
+    }
+}
+
+// 创建爬虫实例
+IHttpClient httpClient = OkHttpClientAdapter.getInstance();
+MySpider spider = new MySpider(httpClient);
+```
+
 ### 切换 HTTP 实现
 
 如果想从 OkHttp 切换到其他 HTTP 库：
