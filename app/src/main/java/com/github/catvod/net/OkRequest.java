@@ -7,6 +7,8 @@ import com.github.catvod.utils.Util;
 import com.orhanobut.logger.Logger;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLEncoder;
 import java.util.Map;
 
 import okhttp3.FormBody;
@@ -58,10 +60,42 @@ class OkRequest {
         return formBody.build();
     }
 
+    /**
+     * 构建 GET 请求的 URL 查询参数
+     * <p>
+     * 使用 URLEncoder 对参数进行编码，防止特殊字符导致 URL 错误。
+     * 使用 StringBuilder 提高字符串拼接效率。
+     * </p>
+     */
     private void setParams() {
-        url = url + "?";
-        for (String key : params.keySet()) url = url.concat(key + "=" + params.get(key) + "&");
-        url = Util.substring(url);
+        if (params == null || params.isEmpty()) {
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder(url);
+        sb.append("?");
+
+        boolean first = true;
+        for (Map.Entry<String, String> entry : params.entrySet()) {
+            if (!first) {
+                sb.append("&");
+            }
+            first = false;
+
+            try {
+                // URL 编码：防止特殊字符（&, =, 空格, 中文等）破坏 URL 结构
+                String encodedKey = URLEncoder.encode(entry.getKey(), "UTF-8");
+                String encodedValue = URLEncoder.encode(entry.getValue() != null ? entry.getValue() : "", "UTF-8");
+                sb.append(encodedKey).append("=").append(encodedValue);
+            } catch (UnsupportedEncodingException e) {
+                // UTF-8 是标准编码，理论上不会抛出此异常
+                Logger.e("Failed to encode URL parameter: " + entry.getKey(), e);
+                // 降级处理：不编码直接拼接（可能导致 URL 错误，但至少不会崩溃）
+                sb.append(entry.getKey()).append("=").append(entry.getValue() != null ? entry.getValue() : "");
+            }
+        }
+
+        url = sb.toString();
     }
 
     public OkResult execute(OkHttpClient client) {
