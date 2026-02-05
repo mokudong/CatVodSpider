@@ -15,7 +15,11 @@ import com.github.catvod.bean.alist.Sorter;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderDebug;
 import com.github.catvod.net.OkHttp;
+import com.github.catvod.utils.JsonValidator;
 import com.github.catvod.utils.Util;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.orhanobut.logger.Logger;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -188,76 +192,235 @@ public class AList extends Spider {
         }
     }
 
+    /**
+     * 登录 AList 获取 Token
+     * <p>
+     * 使用 JsonValidator 验证响应格式，防止数据格式错误。
+     * </p>
+     *
+     * @param drive 驱动配置
+     * @return 登录成功返回 true，失败返回 false
+     */
     private boolean login(Drive drive) {
         try {
             JSONObject params = new JSONObject();
             params.put("username", drive.getLogin().getUsername());
             params.put("password", drive.getLogin().getPassword());
+
             String response = OkHttp.post(drive.loginApi(), params.toString());
-            drive.setToken(new JSONObject(response).getJSONObject("data").getString("token"));
+
+            // 使用 JsonValidator 验证响应格式
+            JsonObject jsonObj = JsonValidator.validateResponse(response, "object");
+
+            // 安全提取 token
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                Logger.w("Login response missing 'data' field");
+                return false;
+            }
+
+            String token = JsonValidator.safeGetString(data, "token", null);
+            if (token == null || token.isEmpty()) {
+                Logger.w("Login response missing or empty 'token' field");
+                return false;
+            }
+
+            drive.setToken(token);
+            Logger.i("AList login successful for drive: " + drive.getName());
             return true;
-        } catch (Exception e) {
-            e.printStackTrace();
+
+        } catch (JsonValidator.ValidationException e) {
+            Logger.e("Login response validation failed", e);
+            return false;
+        } catch (JSONException e) {
+            Logger.e("Failed to create login request params", e);
             return false;
         }
     }
 
+    /**
+     * 获取文件/目录详情
+     * <p>
+     * 改进异常处理，记录具体错误信息。
+     * </p>
+     *
+     * @param id 文件/目录 ID
+     * @return Item 对象，失败返回空 Item
+     */
     private Item getDetail(String id) {
         try {
             String key = id.contains("/") ? id.substring(0, id.indexOf("/")) : id;
             String path = id.contains("/") ? id.substring(id.indexOf("/")) : "";
             Drive drive = getDrive(key);
             path = path.startsWith(drive.getPath()) ? path : drive.getPath() + path;
+
             JSONObject params = new JSONObject();
             params.put("path", path);
             params.put("password", drive.findPass(path));
+
             String response = post(drive, drive.getApi(), params.toString());
             return Item.objectFrom(getDetailJson(drive.isNew(), response));
-        } catch (Exception e) {
+
+        } catch (IllegalArgumentException e) {
+            Logger.e("Invalid drive or path: " + id, e);
+            return new Item();
+        } catch (JSONException e) {
+            Logger.e("Failed to parse detail response for: " + id, e);
+            return new Item();
+        } catch (JsonValidator.ValidationException e) {
+            Logger.e("Detail response validation failed for: " + id, e);
             return new Item();
         }
     }
 
+    /**
+     * 获取文件/目录列表
+     * <p>
+     * 改进异常处理，记录具体错误信息。
+     * </p>
+     *
+     * @param id     目录 ID
+     * @param filter 是否过滤
+     * @return Item 列表，失败返回空列表
+     */
     private List<Item> getList(String id, boolean filter) {
         try {
             String key = id.contains("/") ? id.substring(0, id.indexOf("/")) : id;
             String path = id.contains("/") ? id.substring(id.indexOf("/")) : "";
             Drive drive = getDrive(key);
             path = path.startsWith(drive.getPath()) ? path : drive.getPath() + path;
+
             JSONObject params = new JSONObject();
             params.put("path", path);
             params.put("password", drive.findPass(path));
+
             String response = post(drive, drive.listApi(), params.toString());
             List<Item> items = Item.arrayFrom(getListJson(drive.isNew(), response));
-            Iterator<Item> iterator = items.iterator();
-            if (filter) while (iterator.hasNext()) if (iterator.next().ignore(drive.isNew())) iterator.remove();
+
+            // 过滤
+            if (filter) {
+                Iterator<Item> iterator = items.iterator();
+                while (iterator.hasNext()) {
+                    if (iterator.next().ignore(drive.isNew())) {
+                        iterator.remove();
+                    }
+                }
+            }
+
             return items;
-        } catch (Exception e) {
+
+        } catch (IllegalArgumentException e) {
+            Logger.e("Invalid drive or path: " + id, e);
+            return Collections.emptyList();
+        } catch (JSONException e) {
+            Logger.e("Failed to parse list response for: " + id, e);
+            return Collections.emptyList();
+        } catch (JsonValidator.ValidationException e) {
+            Logger.e("List response validation failed for: " + id, e);
             return Collections.emptyList();
         }
     }
 
-    private String getListJson(boolean isNew, String response) throws JSONException {
+    /**
+     * 提取列表 JSON
+     * <p>
+     * 使用 JsonValidator 验证响应格式，支持新旧版本 AList API。
+     * </p>
+     *
+     * @param isNew    是否为新版 API
+     * @param response 响应字符串
+     * @return 列表 JSON 字符串
+     * @throws JSONException         JSON 解析异常
+     * @throws JsonValidator.ValidationException 响应验证异常
+     */
+    private String getListJson(boolean isNew, String response) throws JSONException, JsonValidator.ValidationException {
+        // 使用 JsonValidator 验证响应
+        JsonObject jsonObj = JsonValidator.validateResponse(response, "object");
+
         if (isNew) {
-            return new JSONObject(response).getJSONObject("data").getJSONArray("content").toString();
+            // 新版 API: data.content[]
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                throw new JSONException("Missing 'data' field in response");
+            }
+            JsonArray content = data.has("content") ? data.getAsJsonArray("content") : new JsonArray();
+            return content.toString();
         } else {
-            return new JSONObject(response).getJSONObject("data").getJSONArray("files").toString();
+            // 旧版 API: data.files[]
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                throw new JSONException("Missing 'data' field in response");
+            }
+            JsonArray files = data.has("files") ? data.getAsJsonArray("files") : new JsonArray();
+            return files.toString();
         }
     }
 
-    private String getDetailJson(boolean isNew, String response) throws JSONException {
+    /**
+     * 提取详情 JSON
+     * <p>
+     * 使用 JsonValidator 验证响应格式，支持新旧版本 AList API。
+     * </p>
+     *
+     * @param isNew    是否为新版 API
+     * @param response 响应字符串
+     * @return 详情 JSON 字符串
+     * @throws JSONException         JSON 解析异常
+     * @throws JsonValidator.ValidationException 响应验证异常
+     */
+    private String getDetailJson(boolean isNew, String response) throws JSONException, JsonValidator.ValidationException {
+        // 使用 JsonValidator 验证响应
+        JsonObject jsonObj = JsonValidator.validateResponse(response, "object");
+
         if (isNew) {
-            return new JSONObject(response).getJSONObject("data").toString();
+            // 新版 API: data{}
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                throw new JSONException("Missing 'data' field in response");
+            }
+            return data.toString();
         } else {
-            return new JSONObject(response).getJSONObject("data").getJSONArray("files").getJSONObject(0).toString();
+            // 旧版 API: data.files[0]
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                throw new JSONException("Missing 'data' field in response");
+            }
+            JsonArray files = data.has("files") ? data.getAsJsonArray("files") : null;
+            if (files == null || files.size() == 0) {
+                throw new JSONException("No files found in response");
+            }
+            return files.get(0).getAsJsonObject().toString();
         }
     }
 
-    private String getSearchJson(boolean isNew, String response) throws JSONException {
+    /**
+     * 提取搜索 JSON
+     * <p>
+     * 使用 JsonValidator 验证响应格式，支持新旧版本 AList API。
+     * </p>
+     *
+     * @param isNew    是否为新版 API
+     * @param response 响应字符串
+     * @return 搜索结果 JSON 字符串
+     * @throws JSONException         JSON 解析异常
+     * @throws JsonValidator.ValidationException 响应验证异常
+     */
+    private String getSearchJson(boolean isNew, String response) throws JSONException, JsonValidator.ValidationException {
+        // 使用 JsonValidator 验证响应
+        JsonObject jsonObj = JsonValidator.validateResponse(response, "object");
+
         if (isNew) {
-            return new JSONObject(response).getJSONObject("data").getJSONArray("content").toString();
+            // 新版 API: data.content[]
+            JsonObject data = JsonValidator.safeGetJsonObject(jsonObj, "data");
+            if (data == null) {
+                throw new JSONException("Missing 'data' field in response");
+            }
+            JsonArray content = data.has("content") ? data.getAsJsonArray("content") : new JsonArray();
+            return content.toString();
         } else {
-            return new JSONObject(response).getJSONArray("data").toString();
+            // 旧版 API: data[]
+            JsonArray data = jsonObj.has("data") ? jsonObj.getAsJsonArray("data") : new JsonArray();
+            return data.toString();
         }
     }
 
