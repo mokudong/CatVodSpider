@@ -19,6 +19,7 @@ import com.thegrizzlylabs.sardineandroid.DavResource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -28,15 +29,42 @@ import java.util.TreeMap;
 
 public class WebDAV extends Spider {
 
+    /**
+     * Filter 缓存
+     * <p>
+     * 使用静态 final 缓存 Filter 对象，避免重复创建。
+     * </p>
+     */
+    private static final List<Filter> FILTER_CACHE = Collections.unmodifiableList(
+            Arrays.asList(
+                    new Filter("type", "排序類型", Arrays.asList(
+                            new Filter.Value("預設", ""),
+                            new Filter.Value("名稱", "name"),
+                            new Filter.Value("大小", "size"),
+                            new Filter.Value("修改時間", "date")
+                    )),
+                    new Filter("order", "排序方式", Arrays.asList(
+                            new Filter.Value("預設", ""),
+                            new Filter.Value("⬆", "asc"),
+                            new Filter.Value("⬇", "desc")
+                    ))
+            )
+    );
+
     private List<Drive> drives;
     private List<String> allExt;
     private String extend;
 
+    /**
+     * 获取筛选条件
+     * <p>
+     * 返回缓存的 Filter 对象，避免重复创建。
+     * </p>
+     *
+     * @return Filter 列表
+     */
     private List<Filter> getFilter() {
-        List<Filter> items = new ArrayList<>();
-        items.add(new Filter("type", "排序類型", Arrays.asList(new Filter.Value("預設", ""), new Filter.Value("名稱", "name"), new Filter.Value("大小", "size"), new Filter.Value("修改時間", "date"))));
-        items.add(new Filter("order", "排序方式", Arrays.asList(new Filter.Value("預設", ""), new Filter.Value("⬆", "asc"), new Filter.Value("⬇", "desc"))));
-        return items;
+        return FILTER_CACHE;
     }
 
     private void fetchRule() {
